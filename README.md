@@ -5,7 +5,7 @@
 
 > A beautiful Slack-inspired dashboard for GitHub Pull Request reviews with automatic syncing and AI-powered analysis.
 
-## ✨ Features
+## ✨ Features:
 
 - 🎨 **Slack-Style UI** - Professional purple sidebar with channel-based filtering
 - 🔄 **Auto-Sync** - Checks GitHub every 5 seconds for new PRs
