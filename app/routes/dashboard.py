@@ -73,6 +73,14 @@ class ActionRequest(BaseModel):
     comment: str | None = None
 
 
+@router.get("/current-url-info", response_class=HTMLResponse)
+async def show_current_url_info(request: Request):
+    """Show current public URL info page (for localhost access)."""
+    return templates.TemplateResponse("current_url.html", {
+        "request": request
+    })
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     """Render login page with public URL for QR code."""
@@ -572,6 +580,49 @@ async def get_pr_diff(
     except Exception as e:
         logger.error(f"Error fetching diff: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/current-url")
+async def get_current_public_url():
+    """Get the current public tunnel URL (no auth required for convenience)."""
+    import subprocess
+    import re
+
+    try:
+        # Try to get URL from localhostrun.log
+        result = subprocess.run(
+            ["grep", "-a", "tunneled with tls termination", "localhostrun.log"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        if result.returncode == 0:
+            # Extract the last URL
+            matches = re.findall(r'https://[a-z0-9]+\.lhr\.life', result.stdout)
+            if matches:
+                current_url = matches[-1]
+                return {
+                    "status": "success",
+                    "public_url": current_url,
+                    "login_url": f"{current_url}/dashboard/login",
+                    "tunnel_type": "localhost.run"
+                }
+
+        # If no URL found
+        return {
+            "status": "no_tunnel",
+            "message": "No active public tunnel found",
+            "public_url": None
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting public URL: {e}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "public_url": None
+        }
 
 
 @router.get("/api/qr-info")

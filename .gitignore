@@ -59,6 +59,11 @@ data/*.db
 # Tunnel & Process Files
 localhostrun.log
 *.pid
+CURRENT_URL.txt
+PUBLIC_URL_CURRENT.txt
+PUBLIC_URL.md
+tunnel_keepalive.log
+ngrok_tunnel.log
 
 # QR Codes
 *.png

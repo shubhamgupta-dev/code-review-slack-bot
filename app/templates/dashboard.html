@@ -807,7 +807,7 @@
 
                 ws.onopen = function() {
                     console.log('🔌 WebSocket connected - Live sync enabled');
-                    showToast('Live sync enabled', 'success');
+                    // Toast removed - no banner on every connection
 
                     // Clear any reconnect timeout
                     if (wsReconnectTimeout) {
@@ -883,12 +883,10 @@
         async function handleNotificationUpdate(message) {
             // Dynamically refresh the dashboard without reloading page
             console.log(`🔄 ${message.action} notification #${message.notification_id}`);
-            showToast('New update available', 'info');
+            // Toast removed - silent background refresh
 
-            // Fetch fresh data
-            setTimeout(async () => {
-                await refreshDashboard();
-            }, 2000);
+            // Fetch fresh data immediately
+            await refreshDashboard();
         }
 
         async function refreshDashboard() {
@@ -909,7 +907,7 @@
                 // Update PR cards
                 updatePRCards(data.notifications);
 
-                showToast('Dashboard updated', 'success');
+                // Toast removed - silent refresh
 
             } catch (error) {
                 console.error('Error refreshing dashboard:', error);
