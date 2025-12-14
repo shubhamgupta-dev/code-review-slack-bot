@@ -1,0 +1,1701 @@
+<!DOCTYPE html>
+<html lang="en" style="overflow-x: hidden; max-width: 100vw;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ReviewFlow - PR Reviews</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        /* Slack-inspired color palette */
+        :root {
+            --slack-aubergine: #4A154B;
+            --slack-dark: #3F0E40;
+            --slack-purple: #611f69;
+            --slack-hover: #350d36;
+            --slack-text: #1d1c1d;
+            --slack-border: #e0e0e0;
+            --slack-sidebar: #3f0e40;
+            --slack-active: #1264a3;
+        }
+
+        body {
+            font-family: 'Lato', 'Helvetica Neue', sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* Sidebar styles */
+        .sidebar {
+            background-color: var(--slack-sidebar);
+            color: #fff;
+        }
+
+        /* Prevent horizontal scroll */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        .message-card, .btn-slack, .file-header, code, pre {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%;
+        }
+
+        /* Ensure flex containers don't overflow */
+        .flex {
+            min-width: 0;
+        }
+
+        /* Prevent specific elements from causing overflow */
+        img, svg, video, canvas, iframe {
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* Fix for long URLs or text */
+        a, p, span, div {
+            word-break: break-word;
+        }
+
+        .sidebar-item {
+            padding: 0.5rem 1rem;
+            margin: 2px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: rgba(255, 255, 255, 0.7);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sidebar-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 3px;
+            background: var(--slack-active);
+            transform: scaleY(0);
+            transition: transform 0.2s ease;
+        }
+
+        .sidebar-item:hover {
+            background-color: var(--slack-hover);
+            color: rgba(255, 255, 255, 0.9);
+            transform: translateX(2px);
+        }
+
+        .sidebar-item:hover::before {
+            transform: scaleY(1);
+        }
+
+        .sidebar-item.active {
+            background-color: var(--slack-active);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .sidebar-item.active::before {
+            transform: scaleY(1);
+        }
+
+        /* Message card styles (Slack-like) */
+        .message-card {
+            padding: 0.75rem 1.25rem;
+            border-left: 4px solid transparent;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .message-card:hover {
+            background-color: #f8f8f8;
+            border-left-color: var(--slack-active);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transform: translateX(4px);
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 4px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            flex-shrink: 0;
+        }
+
+        .badge-slack {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .btn-slack {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        .btn-slack:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            transform: translateY(-2px);
+        }
+
+        .btn-slack:active {
+            transform: translateY(0) scale(0.98);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        }
+
+        /* Ripple effect for buttons */
+        .btn-slack::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .btn-slack:active::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        /* Modal animation */
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: scale(0.9) translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+        .animate-modal {
+            animation: modalSlideIn 0.3s ease-out;
+        }
+
+        /* Diff Viewer Styles */
+        .diff-viewer {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            overflow-x: auto;
+            max-width: 100%;
+        }
+
+        .diff-line {
+            padding: 2px 8px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-width: 100%;
+            overflow-wrap: break-word;
+        }
+
+        .diff-line-added {
+            background-color: #e6ffec;
+            border-left: 3px solid #28a745;
+        }
+
+        .diff-line-removed {
+            background-color: #ffebe9;
+            border-left: 3px solid #d73a49;
+        }
+
+        .diff-line-neutral {
+            background-color: #f6f8fa;
+            color: #6a737d;
+        }
+
+        .file-header {
+            background: #f6f8fa;
+            border: 1px solid #e1e4e8;
+            padding: 8px 12px;
+            border-radius: 6px 6px 0 0;
+            font-weight: 600;
+            overflow: hidden;
+            max-width: 100%;
+        }
+
+        .file-header code {
+            max-width: calc(100% - 100px);
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .diff-stats {
+            display: inline-flex;
+            gap: 8px;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+
+        /* Main content container fixes */
+        .main-content {
+            min-width: 0;
+            flex: 1;
+        }
+
+        main {
+            overflow-x: hidden;
+        }
+
+        .message-card {
+            min-width: 0;
+        }
+
+        /* Mobile Responsive Styles */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                left: -100%;
+                top: 0;
+                bottom: 0;
+                width: 280px;
+                z-index: 100;
+                transition: left 0.3s ease;
+            }
+
+            .sidebar.mobile-open {
+                left: 0;
+                box-shadow: 2px 0 10px rgba(0,0,0,0.3);
+            }
+
+            .main-content {
+                width: 100% !important;
+            }
+
+            .message-card {
+                padding: 0.5rem 0.75rem;
+            }
+
+            .btn-slack {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+
+            .avatar {
+                width: 32px !important;
+                height: 32px !important;
+                font-size: 12px !important;
+            }
+
+            #confirmModal .max-w-md,
+            #commentModal .max-w-lg,
+            #diffModal .max-w-7xl {
+                max-width: 95% !important;
+                margin: 10px;
+            }
+
+            .diff-viewer {
+                font-size: 11px;
+            }
+
+            /* Hide desktop elements on mobile */
+            .desktop-only {
+                display: none !important;
+            }
+
+            /* Show mobile elements only on mobile */
+            .mobile-only {
+                display: block !important;
+            }
+        }
+
+        @media (min-width: 769px) {
+            .mobile-only {
+                display: none !important;
+            }
+        }
+
+        /* Mobile hamburger menu */
+        .hamburger {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            cursor: pointer;
+            padding: 8px;
+        }
+
+        .hamburger span {
+            width: 24px;
+            height: 3px;
+            background: #fff;
+            border-radius: 2px;
+            transition: all 0.3s;
+        }
+
+        .mobile-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 99;
+            display: none;
+        }
+
+        .mobile-overlay.active {
+            display: block;
+        }
+    </style>
+</head>
+<body class="bg-white min-h-screen flex overflow-hidden" style="width: 100vw; max-width: 100vw;">
+    <!-- Mobile Overlay for Sidebar -->
+    <div class="mobile-overlay" id="mobileOverlay" onclick="toggleMobileSidebar()"></div>
+
+    <!-- Slack-style layout: Sidebar + Main Content -->
+
+    <!-- Left Sidebar (Slack-style) -->
+    <aside class="sidebar w-64 flex-shrink-0 flex flex-col h-screen" id="sidebar">
+        <!-- Workspace Header -->
+        <div class="p-4 border-b border-white/10">
+            <div class="flex items-center space-x-2">
+                <div class="text-2xl">⚡</div>
+                <h1 class="text-lg font-bold text-white">ReviewFlow</h1>
+            </div>
+            <p class="text-xs text-gray-300 mt-1">PR Review Workspace</p>
+        </div>
+
+        <!-- Channels/Filters -->
+        <nav class="flex-1 overflow-y-auto scrollbar-thin py-4" role="navigation" aria-label="Pull request filters">
+            <div class="px-3 mb-2 text-xs font-semibold text-gray-300 uppercase">Channels</div>
+
+            <button class="sidebar-item active w-full text-left" onclick="filterByStatus('all')" id="filter-all" aria-label="Show all pull requests">
+                <span class="mr-2" aria-hidden="true">#</span> all-pull-requests
+                <span class="ml-auto text-xs bg-white/20 px-2 py-0.5 rounded" aria-label="{{ stats.total }} total">{{ stats.total }}</span>
+            </button>
+
+            <button class="sidebar-item w-full text-left" onclick="filterByStatus('pending')" id="filter-pending" aria-label="Show pending reviews">
+                <span class="mr-2" aria-hidden="true">#</span> pending-reviews
+                {% if stats.pending > 0 %}
+                <span class="ml-auto text-xs bg-yellow-500 text-white px-2 py-0.5 rounded font-bold" aria-label="{{ stats.pending }} pending">{{ stats.pending }}</span>
+                {% endif %}
+            </button>
+
+            <button class="sidebar-item w-full text-left" onclick="filterByStatus('approved')" id="filter-approved" aria-label="Show approved pull requests">
+                <span class="mr-2" aria-hidden="true">#</span> approved
+                {% if stats.approved > 0 %}
+                <span class="ml-auto text-xs bg-white/20 px-2 py-0.5 rounded" aria-label="{{ stats.approved }} approved">{{ stats.approved }}</span>
+                {% endif %}
+            </button>
+
+            <button class="sidebar-item w-full text-left" onclick="filterByStatus('changes_requested')" id="filter-changes_requested" aria-label="Show pull requests with changes requested">
+                <span class="mr-2" aria-hidden="true">#</span> changes-requested
+                {% if stats.changes_requested > 0 %}
+                <span class="ml-auto text-xs bg-white/20 px-2 py-0.5 rounded" aria-label="{{ stats.changes_requested }} with changes requested">{{ stats.changes_requested }}</span>
+                {% endif %}
+            </button>
+
+            <div class="px-3 mt-4 mb-2 text-xs font-semibold text-gray-300 uppercase">Archive</div>
+
+            <button class="sidebar-item w-full text-left" onclick="filterByStatus('closed')" id="filter-closed" aria-label="Show closed pull requests">
+                <span class="mr-2" aria-hidden="true">#</span> closed
+            </button>
+
+            <button class="sidebar-item w-full text-left" onclick="filterByStatus('merged')" id="filter-merged" aria-label="Show merged pull requests">
+                <span class="mr-2" aria-hidden="true">#</span> merged
+            </button>
+
+            <div class="px-3 mt-4 mb-2 text-xs font-semibold text-gray-300 uppercase">Direct Messages</div>
+            <div class="sidebar-item" role="button" tabindex="0" aria-label="AI Assistant chat (coming soon)">
+                <span class="mr-2" aria-hidden="true">🤖</span> AI Assistant
+            </div>
+        </nav>
+
+        <!-- User Profile (bottom) -->
+        <div class="p-4 border-t border-white/10">
+            <div class="flex items-center space-x-2">
+                <div class="avatar" style="width: 32px; height: 32px; font-size: 12px;">
+                    RW
+                </div>
+                <div class="text-sm">
+                    <div class="font-semibold text-white">Reviewer</div>
+                    <div class="text-xs text-gray-300">Active</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col h-screen main-content">
+        <!-- Top Header Bar (Slack-style) -->
+        <header class="bg-white border-b border-gray-200 px-4 md:px-6 py-3 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <!-- Mobile Hamburger Menu -->
+                <button class="mobile-only hamburger" onclick="toggleMobileSidebar()" aria-label="Toggle menu">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+
+                <h2 class="text-base md:text-lg font-bold text-gray-800" id="channelTitle"># all-pull-requests</h2>
+                <span class="text-xs md:text-sm text-gray-500">{{ notifications|length }} PRs</span>
+            </div>
+            <div class="flex space-x-2" role="toolbar" aria-label="Dashboard controls">
+                <button onclick="toggleAutoRefresh()" id="autoRefreshBtn"
+                        class="px-2 md:px-3 py-1.5 rounded text-xs md:text-sm border border-gray-300 hover:border-gray-400 transition desktop-only"
+                        aria-label="Toggle auto-refresh">
+                    <span id="autoRefreshIcon" aria-hidden="true">⏸️</span> Auto-refresh
+                </button>
+                <button onclick="location.reload()"
+                        class="px-2 md:px-3 py-1.5 rounded text-xs md:text-sm border border-gray-300 hover:border-gray-400 transition"
+                        aria-label="Refresh dashboard">
+                    <span aria-hidden="true">🔄</span><span class="desktop-only ml-1">Refresh</span>
+                </button>
+                <button onclick="handleLogout()"
+                        class="px-2 md:px-3 py-1.5 rounded text-xs md:text-sm border border-red-300 hover:border-red-500 hover:bg-red-50 transition text-red-600"
+                        aria-label="Logout">
+                    <span aria-hidden="true">🚪</span><span class="desktop-only ml-1">Logout</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Messages Area (Scrollable) -->
+        <main class="flex-1 overflow-y-auto scrollbar-thin bg-white">
+            {% if notifications|length == 0 %}
+            <!-- Empty State -->
+            <div class="flex items-center justify-center h-full">
+                <div class="text-center">
+                    <div class="text-6xl mb-4">📭</div>
+                    <h2 class="text-2xl font-bold text-gray-700 mb-2">No Pull Requests</h2>
+                    <p class="text-gray-500">PR notifications will appear here when opened on GitHub</p>
+                </div>
+            </div>
+            {% else %}
+            <!-- PR Messages (Slack-style) -->
+            <div class="divide-y divide-gray-100">
+                {% for notif in notifications %}
+                <div class="message-card hover:bg-gray-50" id="notif-{{ notif.id }}" data-status="{{ notif.status }}">
+                    <div class="flex space-x-3">
+                        <!-- Avatar -->
+                        <div class="avatar">
+                            {{ notif.author[:2].upper() }}
+                        </div>
+
+                        <!-- Message Content -->
+                        <div class="flex-1 min-w-0">
+                            <!-- Header -->
+                            <div class="flex items-baseline space-x-2 mb-1">
+                                <span class="font-bold text-gray-900">{{ notif.author }}</span>
+                                <span class="text-xs text-gray-500">{{ notif.created_at[:16] }}</span>
+
+                                <!-- Status Badge -->
+                                {% if notif.status == 'pending' %}
+                                <span class="badge-slack bg-yellow-100 text-yellow-800">⏳ Pending</span>
+                                {% elif notif.status == 'approved' %}
+                                <span class="badge-slack bg-green-100 text-green-800">✅ Approved</span>
+                                {% elif notif.status == 'changes_requested' %}
+                                <span class="badge-slack bg-red-100 text-red-800">❌ Changes</span>
+                                {% elif notif.status == 'commented' %}
+                                <span class="badge-slack bg-blue-100 text-blue-800">💬 Commented</span>
+                                {% elif notif.status == 'closed' %}
+                                <span class="badge-slack bg-gray-100 text-gray-800">🔒 Closed</span>
+                                {% elif notif.status == 'merged' %}
+                                <span class="badge-slack bg-purple-100 text-purple-800">🎉 Merged</span>
+                                {% endif %}
+                            </div>
+
+                            <!-- PR Title -->
+                            <div class="mb-2">
+                                <a href="{{ notif.pr_url }}" target="_blank"
+                                   class="text-blue-600 hover:underline font-semibold">
+                                    PR #{{ notif.pr_number }}: {{ notif.pr_title }}
+                                </a>
+                            </div>
+
+                            <!-- PR Info Box (Slack attachment style) -->
+                            <div class="border-l-4 border-blue-500 bg-gray-50 p-3 rounded-r mb-3 text-sm">
+                                <div class="font-semibold text-gray-700 mb-2">
+                                    📦 {{ notif.repository }}
+                                </div>
+                                <div class="flex items-center space-x-3 text-xs text-gray-600 mb-2">
+                                    <span class="bg-gray-200 px-2 py-1 rounded">{{ notif.branch_from }}</span>
+                                    <span>→</span>
+                                    <span class="bg-gray-200 px-2 py-1 rounded">{{ notif.branch_to }}</span>
+                                </div>
+                                <div class="flex items-center space-x-4 text-xs text-gray-600">
+                                    <span>📁 {{ notif.files_changed }} files</span>
+                                    <span class="text-green-600">+{{ notif.additions }}</span>
+                                    <span class="text-red-600">-{{ notif.deletions }}</span>
+                                    <span>⏱ {{ notif.complexity }}</span>
+                                </div>
+                            </div>
+
+                            <!-- AI Summary -->
+                            {% if notif.ai_analysis %}
+                            <div class="bg-purple-50 border border-purple-200 rounded p-3 mb-3 text-sm">
+                                <div class="font-semibold text-purple-900 mb-1">🤖 AI Analysis</div>
+                                <p class="text-gray-700 mb-2">{{ notif.ai_analysis.functional_summary }}</p>
+
+                                {% if notif.ai_analysis.key_changes %}
+                                <div class="text-xs space-y-1">
+                                    {% for change in notif.ai_analysis.key_changes[:3] %}
+                                    <div>• {{ change }}</div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            <!-- Action Buttons -->
+                            {% if notif.status == 'pending' %}
+                            <div class="flex flex-wrap gap-2 mt-2" role="group" aria-label="Pull request actions">
+                                <button onclick="viewDiff({{ notif.id }}, '{{ notif.repository }}', {{ notif.pr_number }})"
+                                        class="btn-slack bg-purple-600 hover:bg-purple-700 text-white"
+                                        aria-label="View changes in pull request #{{ notif.pr_number }}">
+                                    📄 View Changes
+                                </button>
+                                <button onclick="approveNotification({{ notif.id }}, '{{ notif.repository }}', {{ notif.pr_number }})"
+                                        class="btn-slack bg-green-600 hover:bg-green-700 text-white"
+                                        aria-label="Approve pull request #{{ notif.pr_number }}">
+                                    ✅ Approve
+                                </button>
+                                <button onclick="showCommentModal({{ notif.id }}, 'changes', '{{ notif.repository }}', {{ notif.pr_number }})"
+                                        class="btn-slack bg-red-600 hover:bg-red-700 text-white"
+                                        aria-label="Request changes on pull request #{{ notif.pr_number }}">
+                                    ❌ Request Changes
+                                </button>
+                                <button onclick="showCommentModal({{ notif.id }}, 'comment', '{{ notif.repository }}', {{ notif.pr_number }})"
+                                        class="btn-slack bg-blue-600 hover:bg-blue-700 text-white"
+                                        aria-label="Add comment to pull request #{{ notif.pr_number }}">
+                                    💬 Comment
+                                </button>
+                                <button onclick="closePR({{ notif.id }}, '{{ notif.repository }}', {{ notif.pr_number }})"
+                                        class="btn-slack bg-orange-600 hover:bg-orange-700 text-white"
+                                        aria-label="Close pull request #{{ notif.pr_number }}">
+                                    🔒 Close PR
+                                </button>
+                                <a href="{{ notif.pr_url }}" target="_blank" rel="noopener noreferrer"
+                                   class="btn-slack bg-gray-600 hover:bg-gray-700 text-white inline-block"
+                                   aria-label="View pull request #{{ notif.pr_number }} on GitHub">
+                                    🔗 View on GitHub
+                                </a>
+                            </div>
+                            {% elif notif.status in ['approved', 'changes_requested', 'commented'] %}
+                            <div class="flex flex-wrap gap-2 mt-2" role="group" aria-label="Pull request actions">
+                                <button onclick="viewDiff({{ notif.id }}, '{{ notif.repository }}', {{ notif.pr_number }})"
+                                        class="btn-slack bg-purple-600 hover:bg-purple-700 text-white"
+                                        aria-label="View changes in pull request #{{ notif.pr_number }}">
+                                    📄 View Changes
+                                </button>
+                                <button onclick="closePR({{ notif.id }}, '{{ notif.repository }}', {{ notif.pr_number }})"
+                                        class="btn-slack bg-orange-600 hover:bg-orange-700 text-white"
+                                        aria-label="Close pull request #{{ notif.pr_number }}">
+                                    🔒 Close PR
+                                </button>
+                                <a href="{{ notif.pr_url }}" target="_blank" rel="noopener noreferrer"
+                                   class="btn-slack bg-gray-600 hover:bg-gray-700 text-white inline-block"
+                                   aria-label="View pull request #{{ notif.pr_number }} on GitHub">
+                                    🔗 View on GitHub
+                                </a>
+                            </div>
+                            {% else %}
+                            <div class="flex flex-wrap gap-2 mt-2">
+                                <button onclick="viewDiff({{ notif.id }}, '{{ notif.repository }}', {{ notif.pr_number }})"
+                                        class="btn-slack bg-purple-600 hover:bg-purple-700 text-white"
+                                        aria-label="View changes in pull request #{{ notif.pr_number }}">
+                                    📄 View Changes
+                                </button>
+                                <a href="{{ notif.pr_url }}" target="_blank" rel="noopener noreferrer"
+                                   class="btn-slack bg-gray-600 hover:bg-gray-700 text-white inline-block"
+                                   aria-label="View pull request #{{ notif.pr_number }} on GitHub">
+                                    🔗 View on GitHub
+                                </a>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </main>
+    </div>
+
+    <!-- Comment Modal -->
+    <div id="commentModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 px-4"
+         onclick="closeModalOnBackdrop(event, 'commentModal')"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="modalTitle">
+        <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto animate-modal" onclick="event.stopPropagation()">
+            <div class="p-6">
+                <h3 id="modalTitle" class="text-xl font-bold mb-4 flex items-center">
+                    <span id="modalIcon" class="mr-2" aria-hidden="true">💬</span>
+                    <span id="modalTitleText">Add Comment</span>
+                </h3>
+                <textarea id="commentText"
+                          class="w-full border-2 border-gray-300 rounded-lg p-3 mb-4 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                          rows="6"
+                          placeholder="Enter your comment..."
+                          aria-label="Comment text"></textarea>
+                <div class="flex space-x-3" role="group">
+                    <button onclick="submitComment()"
+                            class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-lg transition transform hover:scale-105 active:scale-95"
+                            aria-label="Submit comment">
+                        Submit
+                    </button>
+                    <button onclick="closeModal()"
+                            class="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 font-semibold py-3 px-4 rounded-lg transition transform hover:scale-105 active:scale-95"
+                            aria-label="Cancel">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50 px-4"
+         onclick="closeModalOnBackdrop(event, 'confirmModal')"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="confirmTitle"
+         aria-describedby="confirmMessage">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full animate-modal" onclick="event.stopPropagation()">
+            <div class="p-6">
+                <div class="flex items-start mb-4">
+                    <div id="confirmIcon" class="text-4xl mr-4" aria-hidden="true"></div>
+                    <div class="flex-1">
+                        <h3 id="confirmTitle" class="text-xl font-bold mb-2"></h3>
+                        <p id="confirmMessage" class="text-gray-600"></p>
+                    </div>
+                </div>
+                <div class="flex space-x-3" role="group">
+                    <button id="confirmButton"
+                            class="flex-1 font-semibold py-3 px-4 rounded-lg transition transform hover:scale-105 active:scale-95">
+                    </button>
+                    <button onclick="closeConfirmModal()"
+                            class="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 font-semibold py-3 px-4 rounded-lg transition transform hover:scale-105 active:scale-95"
+                            aria-label="Cancel action">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Advanced Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl p-8 text-center shadow-2xl transform transition-all animate-modal">
+            <div class="flex justify-center mb-4">
+                <div class="relative">
+                    <div class="w-16 h-16 border-4 border-indigo-200 rounded-full"></div>
+                    <div class="w-16 h-16 border-4 border-indigo-600 rounded-full absolute top-0 left-0 animate-spin border-t-transparent"></div>
+                </div>
+            </div>
+            <div class="text-gray-800 font-bold text-lg mb-1">Processing</div>
+            <div class="text-gray-500 text-sm">Please wait...</div>
+        </div>
+    </div>
+
+    <!-- Diff Viewer Modal -->
+    <div id="diffModal" class="fixed inset-0 bg-black bg-opacity-60 hidden items-center justify-center z-50 px-2 md:px-4"
+         onclick="closeModalOnBackdrop(event, 'diffModal')"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="diffModalTitle">
+        <div class="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[90vh] overflow-hidden animate-modal flex flex-col" onclick="event.stopPropagation()">
+            <!-- Modal Header -->
+            <div class="p-4 md:p-6 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-50 to-indigo-50">
+                <div class="flex-1 min-w-0">
+                    <h3 id="diffModalTitle" class="text-lg md:text-xl font-bold text-gray-800 mb-1 flex items-center">
+                        <span class="mr-2" aria-hidden="true">📄</span>
+                        <span id="diffPRTitle">Pull Request Changes</span>
+                    </h3>
+                    <p class="text-xs md:text-sm text-gray-600" id="diffPRMeta">Loading...</p>
+                </div>
+                <button onclick="closeDiffModal()"
+                        class="ml-4 p-2 hover:bg-gray-200 rounded-lg transition"
+                        aria-label="Close diff viewer">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Modal Body - Scrollable -->
+            <div class="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50" id="diffContent">
+                <!-- Diff content will be dynamically inserted here -->
+                <div class="flex items-center justify-center py-12">
+                    <div class="animate-spin text-4xl">⏳</div>
+                    <span class="ml-3 text-gray-600">Loading changes...</span>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="p-4 md:p-6 border-t border-gray-200 bg-white flex justify-end space-x-3">
+                <button onclick="closeDiffModal()"
+                        class="px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 font-semibold rounded-lg transition transform hover:scale-105"
+                        aria-label="Close">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-4 right-4 px-6 py-4 rounded-lg shadow-2xl text-white font-semibold transform transition-all duration-300 z-50" style="display: none;">
+        <span id="toastMessage"></span>
+    </div>
+
+</script>
+    <script>
+        let currentNotificationId = null;
+        let currentAction = null;
+        let ws = null;
+        let wsReconnectTimeout = null;
+
+        function getToken() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('token');
+        }
+
+        // WebSocket Live Sync
+        function connectWebSocket() {
+            {% if ws_url %}
+            // Use public WebSocket URL if available
+            const wsUrl = "{{ ws_url }}/dashboard/ws";
+            {% else %}
+            // Fallback to local WebSocket URL
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/dashboard/ws`;
+            {% endif %}
+
+            console.log('🔌 Connecting to WebSocket:', wsUrl);
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = function() {
+                    console.log('🔌 WebSocket connected - Live sync enabled');
+                    showToast('Live sync enabled', 'success');
+
+                    // Clear any reconnect timeout
+                    if (wsReconnectTimeout) {
+                        clearTimeout(wsReconnectTimeout);
+                        wsReconnectTimeout = null;
+                    }
+
+                    // Send keepalive ping every 30 seconds
+                    setInterval(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send('ping');
+                        }
+                    }, 30000);
+                };
+
+                ws.onmessage = function(event) {
+                    try {
+                        const message = JSON.parse(event.data);
+                        handleWebSocketMessage(message);
+                    } catch (error) {
+                        console.error('Error parsing WebSocket message:', error);
+                    }
+                };
+
+                ws.onclose = function() {
+                    console.log('🔌 WebSocket disconnected - Attempting to reconnect...');
+
+                    // Try to reconnect after 5 seconds
+                    wsReconnectTimeout = setTimeout(() => {
+                        console.log('🔄 Reconnecting WebSocket...');
+                        connectWebSocket();
+                    }, 5000);
+                };
+
+                ws.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                };
+
+            } catch (error) {
+                console.error('Failed to connect WebSocket:', error);
+            }
+        }
+
+        function handleWebSocketMessage(message) {
+            console.log('📨 WebSocket message:', message);
+
+            switch (message.type) {
+                case 'connection':
+                    console.log('✅ Connected:', message.message);
+                    break;
+
+                case 'notification_update':
+                    handleNotificationUpdate(message);
+                    break;
+
+                case 'stats_update':
+                    handleStatsUpdate(message.stats);
+                    break;
+
+                case 'sync_status':
+                    handleSyncStatus(message.status, message.details);
+                    break;
+
+                case 'pong':
+                    // Keepalive response
+                    break;
+
+                default:
+                    console.log('Unknown message type:', message.type);
+            }
+        }
+
+        async function handleNotificationUpdate(message) {
+            // Dynamically refresh the dashboard without reloading page
+            console.log(`🔄 ${message.action} notification #${message.notification_id}`);
+            showToast('New update available', 'info');
+
+            // Fetch fresh data
+            setTimeout(async () => {
+                await refreshDashboard();
+            }, 2000);
+        }
+
+        async function refreshDashboard() {
+            try {
+                console.log('📥 Fetching updated dashboard data...');
+
+                const response = await fetch('/dashboard/api/dashboard-data');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch dashboard data');
+                }
+
+                const data = await response.json();
+                console.log('✅ Dashboard data updated', data);
+
+                // Update stats in sidebar
+                updateSidebarStats(data.stats);
+
+                // Update PR cards
+                updatePRCards(data.notifications);
+
+                showToast('Dashboard updated', 'success');
+
+            } catch (error) {
+                console.error('Error refreshing dashboard:', error);
+                showToast('Failed to refresh dashboard', 'error');
+            }
+        }
+
+        function updateSidebarStats(stats) {
+            // Update the badge counts in sidebar
+            const allCount = document.querySelector('#filter-all .text-xs');
+            if (allCount) allCount.textContent = stats.total;
+
+            const pendingBadge = document.querySelector('#filter-pending .text-xs');
+            const approvedBadge = document.querySelector('#filter-approved .text-xs');
+            const changesReqBadge = document.querySelector('#filter-changes_requested .text-xs');
+
+            // Update pending badge
+            if (stats.pending > 0) {
+                if (pendingBadge) {
+                    pendingBadge.textContent = stats.pending;
+                } else {
+                    const pendingBtn = document.querySelector('#filter-pending');
+                    const badge = document.createElement('span');
+                    badge.className = 'ml-auto text-xs bg-yellow-500 text-white px-2 py-0.5 rounded font-bold';
+                    badge.setAttribute('aria-label', `${stats.pending} pending`);
+                    badge.textContent = stats.pending;
+                    pendingBtn.appendChild(badge);
+                }
+            } else if (pendingBadge) {
+                pendingBadge.remove();
+            }
+
+            // Update approved badge
+            if (stats.approved > 0) {
+                if (approvedBadge) {
+                    approvedBadge.textContent = stats.approved;
+                } else {
+                    const approvedBtn = document.querySelector('#filter-approved');
+                    const badge = document.createElement('span');
+                    badge.className = 'ml-auto text-xs bg-white/20 px-2 py-0.5 rounded';
+                    badge.setAttribute('aria-label', `${stats.approved} approved`);
+                    badge.textContent = stats.approved;
+                    approvedBtn.appendChild(badge);
+                }
+            } else if (approvedBadge) {
+                approvedBadge.remove();
+            }
+
+            // Update changes requested badge
+            if (stats.changes_requested > 0) {
+                if (changesReqBadge) {
+                    changesReqBadge.textContent = stats.changes_requested;
+                } else {
+                    const changesReqBtn = document.querySelector('#filter-changes_requested');
+                    const badge = document.createElement('span');
+                    badge.className = 'ml-auto text-xs bg-white/20 px-2 py-0.5 rounded';
+                    badge.setAttribute('aria-label', `${stats.changes_requested} with changes requested`);
+                    badge.textContent = stats.changes_requested;
+                    changesReqBtn.appendChild(badge);
+                }
+            } else if (changesReqBadge) {
+                changesReqBadge.remove();
+            }
+        }
+
+        function updatePRCards(notifications) {
+            const mainContent = document.querySelector('main');
+
+            if (notifications.length === 0) {
+                // Show empty state
+                mainContent.innerHTML = `
+                    <div class="flex items-center justify-center h-full">
+                        <div class="text-center">
+                            <div class="text-6xl mb-4">📭</div>
+                            <h2 class="text-2xl font-bold text-gray-700 mb-2">No Pull Requests</h2>
+                            <p class="text-gray-500">PR notifications will appear here when opened on GitHub</p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            // Render PR cards
+            mainContent.innerHTML = `
+                <div class="divide-y divide-gray-100">
+                    ${notifications.map(notif => renderPRCard(notif)).join('')}
+                </div>
+            `;
+
+            // Update header PR count
+            const prCountSpan = document.querySelector('header span.text-xs');
+            if (prCountSpan) {
+                prCountSpan.textContent = `${notifications.length} PRs`;
+            }
+
+            // Re-apply filter if one is active
+            const activeFilter = document.querySelector('.sidebar-item.active');
+            if (activeFilter) {
+                const filterId = activeFilter.id.replace('filter-', '');
+                if (filterId !== 'all') {
+                    filterByStatus(filterId);
+                }
+            }
+        }
+
+        function renderPRCard(notif) {
+            // Helper function to render status badge
+            const statusBadges = {
+                'pending': '<span class="badge-slack bg-yellow-100 text-yellow-800">⏳ Pending</span>',
+                'approved': '<span class="badge-slack bg-green-100 text-green-800">✅ Approved</span>',
+                'changes_requested': '<span class="badge-slack bg-red-100 text-red-800">❌ Changes</span>',
+                'commented': '<span class="badge-slack bg-blue-100 text-blue-800">💬 Commented</span>',
+                'closed': '<span class="badge-slack bg-gray-100 text-gray-800">🔒 Closed</span>',
+                'merged': '<span class="badge-slack bg-purple-100 text-purple-800">🎉 Merged</span>'
+            };
+
+            const statusBadge = statusBadges[notif.status] || '';
+
+            // AI Analysis section
+            let aiAnalysisHTML = '';
+            if (notif.ai_analysis && notif.ai_analysis.functional_summary) {
+                const keyChanges = notif.ai_analysis.key_changes || [];
+                const keyChangesHTML = keyChanges.slice(0, 3).map(change =>
+                    `<div>• ${escapeHtml(change)}</div>`
+                ).join('');
+
+                aiAnalysisHTML = `
+                    <div class="bg-purple-50 border border-purple-200 rounded p-3 mb-3 text-sm">
+                        <div class="font-semibold text-purple-900 mb-1">🤖 AI Analysis</div>
+                        <p class="text-gray-700 mb-2">${escapeHtml(notif.ai_analysis.functional_summary)}</p>
+                        ${keyChangesHTML ? `<div class="text-xs space-y-1">${keyChangesHTML}</div>` : ''}
+                    </div>
+                `;
+            }
+
+            // Action buttons based on status
+            let actionButtonsHTML = '';
+            if (notif.status === 'pending') {
+                actionButtonsHTML = `
+                    <div class="flex flex-wrap gap-2 mt-2" role="group" aria-label="Pull request actions">
+                        <button onclick="viewDiff(${notif.id}, '${escapeHtml(notif.repository)}', ${notif.pr_number})"
+                                class="btn-slack bg-purple-600 hover:bg-purple-700 text-white"
+                                aria-label="View changes in pull request #${notif.pr_number}">
+                            📄 View Changes
+                        </button>
+                        <button onclick="approveNotification(${notif.id}, '${escapeHtml(notif.repository)}', ${notif.pr_number})"
+                                class="btn-slack bg-green-600 hover:bg-green-700 text-white"
+                                aria-label="Approve pull request #${notif.pr_number}">
+                            ✅ Approve
+                        </button>
+                        <button onclick="showCommentModal(${notif.id}, 'changes', '${escapeHtml(notif.repository)}', ${notif.pr_number})"
+                                class="btn-slack bg-red-600 hover:bg-red-700 text-white"
+                                aria-label="Request changes on pull request #${notif.pr_number}">
+                            ❌ Request Changes
+                        </button>
+                        <button onclick="showCommentModal(${notif.id}, 'comment', '${escapeHtml(notif.repository)}', ${notif.pr_number})"
+                                class="btn-slack bg-blue-600 hover:bg-blue-700 text-white"
+                                aria-label="Add comment to pull request #${notif.pr_number}">
+                            💬 Comment
+                        </button>
+                        <button onclick="closePR(${notif.id}, '${escapeHtml(notif.repository)}', ${notif.pr_number})"
+                                class="btn-slack bg-orange-600 hover:bg-orange-700 text-white"
+                                aria-label="Close pull request #${notif.pr_number}">
+                            🔒 Close PR
+                        </button>
+                        <a href="${escapeHtml(notif.pr_url)}" target="_blank" rel="noopener noreferrer"
+                           class="btn-slack bg-gray-600 hover:bg-gray-700 text-white inline-block"
+                           aria-label="View pull request #${notif.pr_number} on GitHub">
+                            🔗 View on GitHub
+                        </a>
+                    </div>
+                `;
+            } else if (['approved', 'changes_requested', 'commented'].includes(notif.status)) {
+                actionButtonsHTML = `
+                    <div class="flex flex-wrap gap-2 mt-2" role="group" aria-label="Pull request actions">
+                        <button onclick="viewDiff(${notif.id}, '${escapeHtml(notif.repository)}', ${notif.pr_number})"
+                                class="btn-slack bg-purple-600 hover:bg-purple-700 text-white"
+                                aria-label="View changes in pull request #${notif.pr_number}">
+                            📄 View Changes
+                        </button>
+                        <button onclick="closePR(${notif.id}, '${escapeHtml(notif.repository)}', ${notif.pr_number})"
+                                class="btn-slack bg-orange-600 hover:bg-orange-700 text-white"
+                                aria-label="Close pull request #${notif.pr_number}">
+                            🔒 Close PR
+                        </button>
+                        <a href="${escapeHtml(notif.pr_url)}" target="_blank" rel="noopener noreferrer"
+                           class="btn-slack bg-gray-600 hover:bg-gray-700 text-white inline-block"
+                           aria-label="View pull request #${notif.pr_number} on GitHub">
+                            🔗 View on GitHub
+                        </a>
+                    </div>
+                `;
+            } else {
+                actionButtonsHTML = `
+                    <div class="flex flex-wrap gap-2 mt-2">
+                        <button onclick="viewDiff(${notif.id}, '${escapeHtml(notif.repository)}', ${notif.pr_number})"
+                                class="btn-slack bg-purple-600 hover:bg-purple-700 text-white"
+                                aria-label="View changes in pull request #${notif.pr_number}">
+                            📄 View Changes
+                        </button>
+                        <a href="${escapeHtml(notif.pr_url)}" target="_blank" rel="noopener noreferrer"
+                           class="btn-slack bg-gray-600 hover:bg-gray-700 text-white inline-block"
+                           aria-label="View pull request #${notif.pr_number} on GitHub">
+                            🔗 View on GitHub
+                        </a>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="message-card hover:bg-gray-50" id="notif-${notif.id}" data-status="${notif.status}">
+                    <div class="flex space-x-3">
+                        <div class="avatar">
+                            ${escapeHtml(notif.author.substring(0, 2).toUpperCase())}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-baseline space-x-2 mb-1">
+                                <span class="font-bold text-gray-900">${escapeHtml(notif.author)}</span>
+                                <span class="text-xs text-gray-500">${escapeHtml(notif.created_at.substring(0, 16))}</span>
+                                ${statusBadge}
+                            </div>
+                            <div class="mb-2">
+                                <a href="${escapeHtml(notif.pr_url)}" target="_blank"
+                                   class="text-blue-600 hover:underline font-semibold">
+                                    PR #${notif.pr_number}: ${escapeHtml(notif.pr_title)}
+                                </a>
+                            </div>
+                            <div class="border-l-4 border-blue-500 bg-gray-50 p-3 rounded-r mb-3 text-sm">
+                                <div class="font-semibold text-gray-700 mb-2">
+                                    📦 ${escapeHtml(notif.repository)}
+                                </div>
+                                <div class="flex items-center space-x-3 text-xs text-gray-600 mb-2">
+                                    <span class="bg-gray-200 px-2 py-1 rounded">${escapeHtml(notif.branch_from)}</span>
+                                    <span>→</span>
+                                    <span class="bg-gray-200 px-2 py-1 rounded">${escapeHtml(notif.branch_to)}</span>
+                                </div>
+                                <div class="flex items-center space-x-4 text-xs text-gray-600">
+                                    <span>📁 ${notif.files_changed} files</span>
+                                    <span class="text-green-600">+${notif.additions}</span>
+                                    <span class="text-red-600">-${notif.deletions}</span>
+                                    <span>⏱ ${escapeHtml(notif.complexity)}</span>
+                                </div>
+                            </div>
+                            ${aiAnalysisHTML}
+                            ${actionButtonsHTML}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function handleStatsUpdate(stats) {
+            console.log('📊 Stats updated:', stats);
+            // You could update the stats cards here without reloading
+        }
+
+        function handleSyncStatus(status, details) {
+            if (status === 'syncing') {
+                console.log('🔄 Syncing with GitHub...');
+            } else if (status === 'synced') {
+                console.log('✅ Synced with GitHub');
+            } else if (status === 'error') {
+                console.error('❌ Sync error:', details);
+                showToast('Sync error', 'error');
+            }
+        }
+
+        // Connect WebSocket on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            connectWebSocket();
+        });
+
+        async function handleLogout() {
+            try {
+                const response = await fetch('/dashboard/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showToast('Logged out successfully', 'success');
+                    setTimeout(() => {
+                        window.location.href = data.redirect || '/dashboard/login';
+                    }, 500);
+                } else {
+                    showToast('Logout failed', 'error');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                // Force redirect even if logout fails
+                window.location.href = '/dashboard/login';
+            }
+        }
+
+        function showLoading() {
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            document.getElementById('loadingOverlay').classList.add('flex');
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+            document.getElementById('loadingOverlay').classList.remove('flex');
+        }
+
+        // Advanced Custom Modal System
+        function showConfirmModal({ icon, title, message, confirmText, confirmClass, onConfirm }) {
+            const modal = document.getElementById('confirmModal');
+            const iconEl = document.getElementById('confirmIcon');
+            const titleEl = document.getElementById('confirmTitle');
+            const messageEl = document.getElementById('confirmMessage');
+            const confirmBtn = document.getElementById('confirmButton');
+
+            // Set content
+            iconEl.textContent = icon;
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+            confirmBtn.textContent = confirmText;
+            confirmBtn.className = `flex-1 font-semibold py-3 px-4 rounded-lg transition transform hover:scale-105 active:scale-95 ${confirmClass}`;
+
+            // Set up confirm action
+            confirmBtn.onclick = async () => {
+                closeConfirmModal();
+                if (onConfirm) await onConfirm();
+            };
+
+            // Show modal with animation
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => modal.querySelector('.animate-modal').style.opacity = '1', 10);
+        }
+
+        function closeConfirmModal() {
+            const modal = document.getElementById('confirmModal');
+            const modalContent = modal.querySelector('.animate-modal');
+
+            // Fade out animation
+            modalContent.style.opacity = '0';
+            modalContent.style.transform = 'scale(0.9) translateY(-20px)';
+
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+                modalContent.style.opacity = '';
+                modalContent.style.transform = '';
+            }, 200);
+        }
+
+        function closeModalOnBackdrop(event, modalId) {
+            if (event.target.id === modalId) {
+                if (modalId === 'confirmModal') {
+                    closeConfirmModal();
+                } else if (modalId === 'commentModal') {
+                    closeModal();
+                }
+            }
+        }
+
+        // Enhanced Toast Notification System
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+
+            // Icon mapping
+            const icons = {
+                success: '✅',
+                error: '❌',
+                info: 'ℹ️',
+                warning: '⚠️'
+            };
+
+            // Color mapping
+            const colors = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                info: 'bg-blue-500',
+                warning: 'bg-yellow-500'
+            };
+
+            // Set content
+            toastMessage.innerHTML = `<span class="text-2xl mr-2">${icons[type] || icons.info}</span>${message}`;
+
+            // Apply color
+            toast.className = `fixed bottom-4 right-4 px-6 py-4 rounded-lg shadow-2xl text-white font-semibold transform transition-all duration-300 z-50 ${colors[type] || colors.info}`;
+
+            // Show with slide-in animation
+            toast.style.transform = 'translateX(400px)';
+            toast.style.display = 'flex';
+            toast.style.alignItems = 'center';
+
+            setTimeout(() => {
+                toast.style.transform = 'translateX(0)';
+            }, 10);
+
+            // Hide after 3 seconds with slide-out animation
+            setTimeout(() => {
+                toast.style.transform = 'translateX(400px)';
+                setTimeout(() => {
+                    toast.style.display = 'none';
+                }, 300);
+            }, 3000);
+        }
+
+        async function approveNotification(id, repo, prNumber) {
+            showConfirmModal({
+                icon: '✅',
+                title: 'Approve Pull Request',
+                message: `Are you sure you want to approve PR #${prNumber} in ${repo}?`,
+                confirmText: 'Yes, Approve',
+                confirmClass: 'bg-green-600 hover:bg-green-700 text-white shadow-lg',
+                onConfirm: async () => {
+                    showLoading();
+                    try {
+                        const response = await fetch(`/dashboard/api/notifications/${id}/approve?token=${getToken()}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ comment: null })
+                        });
+
+                        const data = await response.json();
+
+                        if (response.ok) {
+                            // Celebration animation!
+                            confetti({
+                                particleCount: 100,
+                                spread: 70,
+                                origin: { y: 0.6 }
+                            });
+
+                            // Show success message
+                            showToast(`✅ ${data.message}`, 'success');
+
+                            // Wait a moment then refresh dashboard dynamically
+                            setTimeout(() => refreshDashboard(), 1500);
+                        } else {
+                            showToast(`❌ Error: ${data.detail}`, 'error');
+                        }
+                    } catch (error) {
+                        showToast(`❌ Error: ${error.message}`, 'error');
+                    } finally {
+                        hideLoading();
+                    }
+                }
+            });
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `fixed bottom-4 right-4 px-6 py-4 rounded-lg shadow-lg text-white transform transition-all duration-300 z-50 ${
+                type === 'success' ? 'bg-green-500' :
+                type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+            }`;
+            toast.textContent = message;
+            toast.style.transform = 'translateY(100px)';
+            document.body.appendChild(toast);
+
+            setTimeout(() => toast.style.transform = 'translateY(0)', 10);
+            setTimeout(() => {
+                toast.style.transform = 'translateY(100px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Auto-refresh functionality
+        let autoRefreshInterval = null;
+        function toggleAutoRefresh() {
+            const btn = document.getElementById('autoRefreshBtn');
+            const icon = document.getElementById('autoRefreshIcon');
+
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                icon.textContent = '⏸️';
+                btn.classList.remove('bg-green-500', 'text-white');
+                btn.classList.add('border-gray-300');
+                showToast('Auto-refresh disabled', 'info');
+            } else {
+                autoRefreshInterval = setInterval(() => {
+                    location.reload();
+                }, 10000); // Refresh every 10 seconds
+                icon.textContent = '▶️';
+                btn.classList.remove('border-gray-300');
+                btn.classList.add('bg-green-500', 'text-white');
+                showToast('Auto-refresh enabled (10s)', 'info');
+            }
+        }
+
+        // Enable auto-refresh by default on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            toggleAutoRefresh(); // Start auto-refresh automatically
+        });
+
+        // Filter functionality (updated for Slack layout)
+        function filterByStatus(status) {
+            // Update sidebar active state
+            document.querySelectorAll('.sidebar-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            document.getElementById(`filter-${status}`).classList.add('active');
+
+            // Update channel title
+            const titleMap = {
+                'all': '# all-pull-requests',
+                'pending': '# pending-reviews',
+                'approved': '# approved',
+                'changes_requested': '# changes-requested',
+                'closed': '# closed',
+                'merged': '# merged'
+            };
+            document.getElementById('channelTitle').textContent = titleMap[status] || '# all-pull-requests';
+
+            // Filter messages
+            const cards = document.querySelectorAll('.message-card');
+            let visibleCount = 0;
+            cards.forEach(card => {
+                const cardStatus = card.getAttribute('data-status');
+                if (status === 'all') {
+                    card.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    if (cardStatus === status) {
+                        card.style.display = 'block';
+                        visibleCount++;
+                    } else {
+                        card.style.display = 'none';
+                    }
+                }
+            });
+
+            // Show filtered toast
+            showToast(`Showing ${visibleCount} PRs`, 'info');
+        }
+
+        function showCommentModal(id, action, repo, prNumber) {
+            currentNotificationId = id;
+            currentAction = action;
+
+            const modalTitle = action === 'changes'
+                ? `❌ Request Changes on PR #${prNumber}`
+                : `💬 Add Comment to PR #${prNumber}`;
+
+            document.getElementById('modalTitle').textContent = modalTitle;
+            document.getElementById('commentText').value = '';
+            document.getElementById('commentModal').classList.remove('hidden');
+            document.getElementById('commentModal').classList.add('flex');
+        }
+
+        function closeModal() {
+            document.getElementById('commentModal').classList.add('hidden');
+            document.getElementById('commentModal').classList.remove('flex');
+        }
+
+        async function submitComment() {
+            const comment = document.getElementById('commentText').value.trim();
+
+            if (!comment) {
+                alert('Please enter a comment');
+                return;
+            }
+
+            closeModal();
+            showLoading();
+
+            try {
+                const endpoint = currentAction === 'changes'
+                    ? `/dashboard/api/notifications/${currentNotificationId}/request-changes`
+                    : `/dashboard/api/notifications/${currentNotificationId}/comment`;
+
+                const response = await fetch(`${endpoint}?token=${getToken()}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comment })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showToast(`✅ ${data.message}`, 'success');
+                    setTimeout(() => refreshDashboard(), 1500);
+                } else {
+                    showToast(`❌ Error: ${data.detail}`, 'error');
+                }
+            } catch (error) {
+                showToast(`❌ Error: ${error.message}`, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Close PR function with custom modal
+        async function closePR(id, repo, prNumber) {
+            showConfirmModal({
+                icon: '🔒',
+                title: 'Close Pull Request',
+                message: `Are you sure you want to close PR #${prNumber} in ${repo}? This will close the PR on GitHub.`,
+                confirmText: 'Yes, Close PR',
+                confirmClass: 'bg-orange-600 hover:bg-orange-700 text-white shadow-lg',
+                onConfirm: async () => {
+                    showLoading();
+                    try {
+                        const response = await fetch(`/dashboard/api/notifications/${id}/close?token=${getToken()}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+
+                        const data = await response.json();
+
+                        if (response.ok) {
+                            showToast(data.message, 'success');
+                            setTimeout(() => refreshDashboard(), 1500);
+                        } else {
+                            showToast(`Error: ${data.detail}`, 'error');
+                        }
+                    } catch (error) {
+                        showToast(`Error: ${error.message}`, 'error');
+                    } finally {
+                        hideLoading();
+                    }
+                }
+            });
+        }
+
+        // Mobile Sidebar Toggle
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('mobileOverlay');
+
+            sidebar.classList.toggle('mobile-open');
+            overlay.classList.toggle('active');
+        }
+
+        // View Diff Function
+        async function viewDiff(notificationId, repo, prNumber) {
+            const modal = document.getElementById('diffModal');
+            const content = document.getElementById('diffContent');
+            const title = document.getElementById('diffPRTitle');
+            const meta = document.getElementById('diffPRMeta');
+
+            // Show modal with loading state
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+
+            title.textContent = `PR #${prNumber}`;
+            meta.textContent = `${repo} - Loading changes...`;
+
+            try {
+                const response = await fetch(`/dashboard/api/notifications/${notificationId}/diff?token=${getToken()}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to fetch diff');
+                }
+
+                // Update meta info
+                meta.textContent = `${data.repository} - ${data.files.length} file(s) changed`;
+
+                // Render diff content
+                content.innerHTML = renderDiff(data.files);
+
+            } catch (error) {
+                console.error('Error fetching diff:', error);
+                content.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+                        <div class="text-red-600 text-4xl mb-2">❌</div>
+                        <div class="text-red-800 font-semibold mb-2">Failed to load changes</div>
+                        <div class="text-red-600 text-sm">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+
+        function closeDiffModal() {
+            const modal = document.getElementById('diffModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function renderDiff(files) {
+            if (files.length === 0) {
+                return `
+                    <div class="bg-gray-100 rounded-lg p-8 text-center">
+                        <div class="text-gray-400 text-4xl mb-2">📭</div>
+                        <div class="text-gray-600">No changes found</div>
+                    </div>
+                `;
+            }
+
+            let html = '<div class="space-y-6">';
+
+            files.forEach(file => {
+                const statusColor = {
+                    'added': 'text-green-600 bg-green-50',
+                    'removed': 'text-red-600 bg-red-50',
+                    'modified': 'text-blue-600 bg-blue-50',
+                    'renamed': 'text-yellow-600 bg-yellow-50'
+                }[file.status] || 'text-gray-600 bg-gray-50';
+
+                const statusIcon = {
+                    'added': '✚',
+                    'removed': '✖',
+                    'modified': '✎',
+                    'renamed': '↻'
+                }[file.status] || '•';
+
+                html += `
+                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
+                        <div class="file-header flex flex-col md:flex-row md:items-center justify-between gap-2">
+                            <div class="flex items-center space-x-2 min-w-0">
+                                <span class="inline-flex items-center px-2 py-1 rounded text-xs font-medium ${statusColor}">
+                                    ${statusIcon} ${file.status}
+                                </span>
+                                <code class="text-sm font-medium text-gray-800 truncate">${file.filename}</code>
+                            </div>
+                            <div class="diff-stats flex items-center">
+                                <span class="text-green-600 font-medium">+${file.additions}</span>
+                                <span class="mx-1 text-gray-400">/</span>
+                                <span class="text-red-600 font-medium">-${file.deletions}</span>
+                            </div>
+                        </div>
+                `;
+
+                if (file.patch) {
+                    html += '<div class="diff-viewer border-t border-gray-200">';
+                    const lines = file.patch.split('\n');
+
+                    lines.forEach(line => {
+                        let className = 'diff-line-neutral';
+                        if (line.startsWith('+') && !line.startsWith('+++')) {
+                            className = 'diff-line-added';
+                        } else if (line.startsWith('-') && !line.startsWith('---')) {
+                            className = 'diff-line-removed';
+                        }
+
+                        const escapedLine = line
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;')
+                            .replace(/"/g, '&quot;')
+                            .replace(/'/g, '&#039;');
+
+                        html += `<div class="diff-line ${className}">${escapedLine || ' '}</div>`;
+                    });
+
+                    html += '</div>';
+                } else {
+                    html += `
+                        <div class="p-4 bg-gray-50 text-center text-sm text-gray-500">
+                            <em>Binary file or no diff available</em>
+                        </div>
+                    `;
+                }
+
+                html += '</div>';
+            });
+
+            html += '</div>';
+            return html;
+        }
+
+        // Close modals on ESC key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                closeConfirmModal();
+                closeDiffModal();
+            }
+        });
+
+        // Update closeModalOnBackdrop to handle all modals
+        const originalCloseModalOnBackdrop = closeModalOnBackdrop;
+        closeModalOnBackdrop = function(event, modalId) {
+            if (modalId === 'diffModal' && event.target.id === 'diffModal') {
+                closeDiffModal();
+            } else {
+                originalCloseModalOnBackdrop(event, modalId);
+            }
+        };
+    </script>
+</body>
+</html>

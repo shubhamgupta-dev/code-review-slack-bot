@@ -1,0 +1,47 @@
+📱 MUST DO THESE 3 STEPS FOR MOBILE ACCESS
+==========================================
+
+⚠️  THE #1 REASON MOBILE ACCESS FAILS: FIREWALL IS BLOCKING ⚠️
+
+STEP 1: DISABLE FIREWALL ON YOUR MAC
+-------------------------------------
+Open Terminal and run:
+
+    sudo /usr/libexec/ApplicationFirewall/socketfilterfw --setglobalstate off
+
+(Enter your Mac password when asked)
+
+
+STEP 2: CONNECT MOBILE TO SAME WIFI
+------------------------------------
+On your mobile device:
+- Go to Settings → WiFi
+- Connect to the SAME WiFi network as your Mac
+- Turn OFF cellular data
+
+
+STEP 3: OPEN THIS URL ON MOBILE BROWSER
+----------------------------------------
+    http://192.168.29.169:8000/dashboard/?token=demo-token-123
+
+Or scan the QR code (run: ./SHOW_QR.sh)
+
+
+✅ HOW TO VERIFY BOTH ON SAME WIFI:
+===================================
+Computer: Click WiFi icon in menu bar → Note network name
+Mobile: Settings → WiFi → Check network name matches
+
+
+🔧 IF STILL NOT WORKING:
+========================
+- Try accessing: http://100.96.3.158:8000/dashboard/?token=demo-token-123
+  (This uses Tailscale and works if you have it on mobile)
+
+- Or run: ./FIX_MOBILE_ACCESS.sh for step-by-step fix
+
+
+⚠️ IMPORTANT:
+=============
+The firewall MUST be disabled for local network access to work.
+This is the most common issue!
